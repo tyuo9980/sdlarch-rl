@@ -10,3 +10,4 @@ keyboard
 inputs
 sb3-contrib
 ipykernel
+pywin32

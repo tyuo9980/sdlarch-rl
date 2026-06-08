@@ -1,15 +1,16 @@
 
-import gymnasium as gym
 import subprocess
-import win32gui
-import win32ui
-from ctypes import windll
-import numpy as np
-import win32process
 import time
+from ctypes import windll
+
+import cv2
+import gymnasium as gym
+import numpy as np
 import psutil
 import vgamepad as vg
-import cv2
+import win32gui
+import win32process
+import win32ui
 
 TARGET_FPS = 60
 FRAME_TIME = 1.0 / TARGET_FPS
@@ -20,7 +21,7 @@ class STF6Env(gym.Env):
         self, 
     ) -> None:
         process = subprocess.Popen([
-            r"F:\SteamLibrary\steamapps\common\Street Fighter 6\StreetFighter6.exe"
+            r"C:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\StreetFighter6.exe"
         ])
 
         self.pid = process.pid
