@@ -8,7 +8,7 @@ import torch as th
 from stable_baselines3.common.policies import ActorCriticPolicy
 
 from train_bc_gamestate import EmbeddingExtractor  # noqa: F401 — needed for policy load
-from utils import HISTORY, N_BITS, _get_player_and_opponent, _mirror_input, extract_action, extract_obs_embed
+from utils import HISTORY, N_BITS, _get_player_and_opponent, _mirror_input, extract_input, extract_obs_embed
 
 MODEL_PATH  = "models/bc_gamestate/bc_policy_gamestate.zip"
 VOCAB_PATH  = "models/bc_gamestate/bc_action_vocab.json"
@@ -64,7 +64,7 @@ def run_offline():
         predicted_bits, predicted_int = predict(buffer)
         times.append((time.perf_counter() - t0) * 1000)
 
-        actual_bits = extract_action(frame).astype(int)
+        actual_bits = extract_input(frame).astype(int)
         actual_int  = sum(int(b) << i for i, b in enumerate(actual_bits))
 
         if _print_frame(i + 1, actual_bits, actual_int, predicted_bits, predicted_int):
@@ -105,7 +105,7 @@ def run_stream():
                 buffer.pop(0)
 
             predicted_bits, predicted_int = predict(buffer)
-            actual_bits = extract_action(frame).astype(int)
+            actual_bits = extract_input(frame).astype(int)
             actual_int  = sum(int(b) << i for i, b in enumerate(actual_bits))
 
             frame_num += 1

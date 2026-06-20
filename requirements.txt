@@ -2,17 +2,16 @@
 torch
 torchvision
 torchaudio
+numpy
 gymnasium
 stable-baselines3
+imitation
+vgamepad
+lerobot
+# notebooks
 opencv-python
 pygame
-imitation
 jupyterlab
-opt_einsum
-pettingzoo
-keyboard
-inputs
-sb3-contrib
 ipykernel
+# windows
 pywin32
-vgamepad

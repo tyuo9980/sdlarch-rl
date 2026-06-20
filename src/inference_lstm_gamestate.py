@@ -7,7 +7,7 @@ import torch as th
 
 from train_lstm_gamestate import SAVE_FILE as MODEL_PATH
 from train_lstm_gamestate import LSTMPolicy
-from utils import extract_action, frame_features
+from utils import extract_input, frame_features
 
 DATA_PATH   = "data/game_state_1780768383.json"
 STREAM_PATH = r"C:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\data\sf6_stream.txt"
@@ -71,7 +71,7 @@ def run_offline():
         times.append((time.perf_counter() - t0) * 1000)
         predicted_int = _bits_to_int(bits)
 
-        actual_bits = extract_action(frame).astype(int)
+        actual_bits = extract_input(frame).astype(int)
         actual_int  = _bits_to_int(actual_bits)
 
         match = _print_frame(i + 1, actual_bits, actual_int, bits, predicted_int)
@@ -131,7 +131,7 @@ def run_stream():
             bits, hidden  = model.predict(float_feats, action_ids, hidden)
             predicted_int = _bits_to_int(bits)
 
-            actual_bits = extract_action(frame).astype(int)
+            actual_bits = extract_input(frame).astype(int)
             actual_int  = _bits_to_int(actual_bits)
 
             frame_num += 1

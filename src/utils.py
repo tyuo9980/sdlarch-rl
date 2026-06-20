@@ -28,6 +28,13 @@ def _canonical_action_id(action_id: int) -> int:
 
 # ── Feature extraction ─────────────────────────────────────────────────────────
 
+def canonicalize_action_ids(frames: list) -> None:
+    """Replace raw action IDs in every frame with their canonical equivalents in-place."""
+    for frame in frames:
+        for key in ("p1", "p2"):
+            action = frame[key]["action"]
+            action[0] = _ACTION_ID_MAP.get(action[0], action[0])
+
 def _get_player_and_opponent(frame: dict):
     """Returns (cammy, opponent) regardless of which side Cammy is on."""
     if frame["p1"]["id"] == 9:
@@ -36,7 +43,8 @@ def _get_player_and_opponent(frame: dict):
 
 def frame_features(frame: dict) -> tuple[list, list]:
     """Returns (float_features, [player_action_id, opponent_action_id]).
-    float_features: 18 floats (positions, distance, stance, y-diff, HP, drive, super, distance buckets).
+    float_features: 18 floats (positions x2, distance x2, stance x3, player resources x2,
+    opponent resources x2, action progress x2, hitstop + hitstun x2 + blockstun x2).
     Action IDs are kept separate for nn.Embedding lookup in the LSTM model."""
     player, opponent = _get_player_and_opponent(frame)
     mirror = not bool(player["dir"])
@@ -45,24 +53,30 @@ def frame_features(frame: dict) -> tuple[list, list]:
 
     dist_norm = float(np.clip(player["dist"] / 490.0, 0.0, 1.0))
     float_features = [
-        np.clip(sign * player["pos"]["x"]   / 765.0, -1.0, 1.0),
-        np.clip(       player["pos"]["y"]   / 300.0,  0.0, 1.0),
-        np.clip(sign * opponent["pos"]["x"] / 765.0, -1.0, 1.0),
-        np.clip(       opponent["pos"]["y"] / 300.0,  0.0, 1.0),
+        # ── positions ──────────────────────────────────────────────────────────
+        np.clip(sign * player["pos"]["x"]   / 765.0, -1.0, 1.0),   # Cammy x (negative = near left wall)
+        np.clip(sign * opponent["pos"]["x"] / 765.0, -1.0, 1.0),   # opponent x
+        # ── distance (delta x, delta y) ────────────────────────────────────────────
         dist_norm,
+        np.clip(abs(player["pos"]["y"] - opponent["pos"]["y"]) / 300.0, 0.0, 1.0),
+        # ── stance / air ───────────────────────────────────────────────────────
         float(stance == 0),
         float(stance == 1),
         float(stance == 2),
-        np.clip(abs(player["pos"]["y"] - opponent["pos"]["y"]) / 300.0, 0.0, 1.0),
-        np.clip(player["hp"]            / 10000.0, 0.0, 1.0),
-        np.clip(opponent["hp"]          / 10000.0, 0.0, 1.0),
+        # ── player resources ───────────────────────────────────────────────────
         np.clip(player["drive"]         / 60000.0, 0.0, 1.0),
-        np.clip(opponent["drive"]       / 60000.0, 0.0, 1.0),
         np.clip(player["super"]         / 30000.0, 0.0, 1.0),
+        # ── opponent resources ──────────────────────────────────────────────────
+        np.clip(opponent["drive"]       / 60000.0, 0.0, 1.0),
         np.clip(opponent["super"]       / 30000.0, 0.0, 1.0),
-        float(dist_norm < 0.25),          # close range  (< ~130px)
-        float(0.30 <= dist_norm < 0.50),  # medium range
-        float(dist_norm >= 0.50),         # far range    (> ~294px)
+        # ── action progress ────────────────────────────────────────────────────
+        np.clip(player["action"][1]   / player["action"][2],   0.0, 1.0),
+        np.clip(opponent["action"][1] / opponent["action"][2], 0.0, 1.0),
+        np.clip(player["hitstop"][0] / max(player["hitstop"][1], 1), 0.0, 1.0),
+        np.clip(player["hitstun"][0] / max(player["hitstun"][1], 1), 0.0, 1.0),
+        np.clip(opponent["hitstun"][0] / max(opponent["hitstun"][1], 1), 0.0, 1.0),
+        np.clip(player["blockstun"][0] / max(player["blockstun"][1], 1), 0.0, 1.0),
+        np.clip(opponent["blockstun"][0] / max(opponent["blockstun"][1], 1), 0.0, 1.0),
     ]
     action_ids = [_canonical_action_id(int(player["action"][0])),
                   _canonical_action_id(int(opponent["action"][0]))]
@@ -94,7 +108,7 @@ def extract_obs_embed(window: list[dict]) -> np.ndarray:
         floats_list.extend(floats)
     return np.array(ids_list + floats_list, dtype=np.float32)
 
-def extract_action(frame: dict) -> np.ndarray:
+def extract_input(frame: dict) -> np.ndarray:
     """Cammy's input as a float32 bit array of shape (N_BITS,).
     LEFT and RIGHT bits are swapped when Cammy is on the right side."""
     player, _ = _get_player_and_opponent(frame)
@@ -142,7 +156,7 @@ def build_input_vocab(frames: list) -> tuple[dict, list]:
     vocab = {v: i for i, v in enumerate(input_ints)}
     return vocab, input_ints
 
-def extract_action_idx(frame: dict, vocab: dict) -> int:
+def extract_input_index(frame: dict, vocab: dict) -> int:
     """Returns the vocab class index for Cammy's input in this frame."""
     player, _ = _get_player_and_opponent(frame)
     val = _clean_input(player["input"])
@@ -163,19 +177,25 @@ def _is_default_state(frame: dict) -> bool:
 def _is_end_state(frame: dict) -> bool:
     return frame["p1"]["hp"] <= 0 or frame["p2"]["hp"] <= 0
 
-def split_episodes(frames: list) -> list[list[dict]]:
-    """Segments a flat list of frames into per-round episode lists."""
-    prev = None
+def split_episodes(frames: list, default_lead_in: int = 16) -> list[list[dict]]:
+    """Segments a flat list of frames into per-round episode lists.
+
+    Keeps the last `default_lead_in` pre-fight idle frames at the start of each
+    round so the model has context for the opening state.
+    """
     clean_frames = []
+    default_buf = []
+
     for f in frames:
         if _is_end_state(f):
-            prev = f
-            continue
-        if _is_default_state(f) and prev is not None and _is_default_state(prev):
-            prev = f
-            continue
-        clean_frames.append(f)
-        prev = f
+            default_buf.clear()
+        elif _is_default_state(f):
+            default_buf.append(f)
+        else:
+            if default_buf:
+                clean_frames.extend(default_buf[-default_lead_in:])
+                default_buf.clear()
+            clean_frames.append(f)
 
     episodes = []
     new_round = True
@@ -184,12 +204,12 @@ def split_episodes(frames: list) -> list[list[dict]]:
         if new_round and not _is_default_state(f):
             new_round = False
         if not new_round and _is_default_state(f):
-            if len(ep) > 300:
+            if len(ep) > 0:
                 episodes.append(ep)
             new_round = True
             ep = []
         ep.append(f)
-    if len(ep) > 300:
+    if len(ep) > 0:
         episodes.append(ep)
 
     return episodes

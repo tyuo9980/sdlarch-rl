@@ -12,7 +12,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 from utils import (DATA_DIR, FLOAT_DIM, HISTORY, MAX_ACTION_ID, build_input_vocab,
-                   extract_action_idx, extract_obs_embed, split_episodes)
+                   extract_input_index, extract_obs_embed, split_episodes)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 SAVE_PATH  = "models/bc_gamestate/"
@@ -59,7 +59,7 @@ def build_trajectories(frames: list, vocab: dict) -> list[Trajectory]:
             obs_list.append(extract_obs_embed(window))
 
         obs   = np.array(obs_list, dtype=np.float32)
-        acts  = np.array([extract_action_idx(f, vocab) for f in ep[:-1]], dtype=np.int64)
+        acts  = np.array([extract_input_index(f, vocab) for f in ep[:-1]], dtype=np.int64)
         infos = np.array([{}] * (len(ep) - 1))
         return Trajectory(obs=obs, acts=acts, infos=infos, terminal=True)
 

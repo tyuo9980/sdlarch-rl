@@ -15,7 +15,7 @@ from utils import (
     _mirror_input,
     build_action_id_vocab,
     build_input_vocab,
-    extract_action_idx,
+    extract_input_index,
     frame_features,
     split_episodes,
 )
@@ -94,7 +94,7 @@ class EpisodeDataset(Dataset):
             splits  = [frame_features(f) for f in ep[:-1]]
             floats  = np.array([s[0] for s in splits], dtype=np.float32)
             ids     = np.array([[action_id_vocab.get(a, 0) for a in s[1]] for s in splits], dtype=np.int64)
-            actions = np.array([extract_action_idx(f, vocab) for f in ep[:-1]], dtype=np.int64)
+            actions = np.array([extract_input_index(f, vocab) for f in ep[:-1]], dtype=np.int64)
 
             # compute per-frame loss weights
             n  = len(actions)
